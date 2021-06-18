@@ -724,7 +724,7 @@ contract MultiSwapPerTx is Ownable {
     using SafeMath for uint256;
     using Address for address;
 
-    uint256 public _maxLoop = 50;
+    mapping(address=>uint256) public _mapMaxLoop;
 
     mapping(address=>bool) public _mapWhilteList;
     address[] public _whilteList;
@@ -777,12 +777,16 @@ contract MultiSwapPerTx is Ownable {
         _mapOnetimeTxAmount[_msgSender()] = onetimeAmount;
     }
 
-    
+    function setMaxTranactionCount(uint256 count) external _onlyWhiteLister{
+        _mapMaxLoop[_msgSender()] = count;
+    }
 
     function swapAndDistribute() external payable _onlyWhiteLister(){
         IERC20 TokenContract = _mapTokenContract[_msgSender()];
         address[] memory DistributerList = _mapDistributerList[_msgSender()];
         uint256 OnetimeTxAmount = _mapOnetimeTxAmount[_msgSender()];
+        uint256 MaxLoop = 50;
+        if (_mapMaxLoop[_msgSender()] > 0) MaxLoop = _mapMaxLoop[_msgSender()];
 
         address[] memory path = new address[](2);
         path[0] = uniswapV2Router.WETH();
@@ -807,7 +811,7 @@ contract MultiSwapPerTx is Ownable {
             paidBalance = paidBalance.sub(inputAmount);
 
             loopCount++;
-            if (loopCount > _maxLoop || paidBalance <= 0) break;
+            if (loopCount > MaxLoop || paidBalance <= 0) break;
         }
         if (paidBalance > 0) payable(_msgSender()).transfer(paidBalance);
 
