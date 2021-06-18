@@ -353,38 +353,76 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
 contract MultiSwapPerTx is Ownable {
     using SafeMath for uint256;
     using Address for address;
-    
-    IERC20 public _tokenContract = IERC20(0xb7a4F3E9097C08dA09517b5aB877F7a917224ede);//USDC
-    address public _wETHAddress = 0xd0A1E359811322d97991E03f863a0C30C2cF029C;//KOVAN-WETH
-    uint256 public _onetimeTranactionAmount;
 
-    address[] public _distributerList;
-    
+    uint256 public _maxLoop = 50;
+
+    mapping(address=>bool) public _mapWhilteList;
+    address[] public _whilteList;
+
+    mapping(address=>address[]) public _mapDistributerList;
+    mapping(address=>IERC20) public _mapTokenContract;
+    mapping(address=>uint256) public _mapOnetimeTxAmount;
+
     IUniswapV2Router02 public uniswapV2Router;
-    address public _uniswapRouterAddress = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;//KOVAN-UniswapV2-Router
 
     constructor() {
-        uniswapV2Router = IUniswapV2Router02(_uniswapRouterAddress);
+        uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
     }
 
-    function tokenContractAndOneTimeAmount(address tokenAddress, uint256 onetimeAmount) external onlyOwner{
-        _tokenContract = IERC20(tokenAddress);
-        _onetimeTranactionAmount = onetimeAmount;
+    modifier _onlyWhiteLister(){
+        require(_mapWhilteList[_msgSender()] == true, "You are not allowed");
+        _;
+    }
+
+    function addWhilteList(address _address) external onlyOwner{
+        _mapWhilteList[_address] = true;
+        _whilteList.push(_address);
     }
     
-    function addDistributer(address distributer) external onlyOwner{
-        _distributerList.push(distributer);
+    function removeWhilteList(address _address) external onlyOwner{
+        _mapWhilteList[_address] = false;
+        for(uint i = 0; i < _whilteList.length; i++){
+            if (_whilteList[i] == _address){
+                _whilteList[i] = _whilteList[_whilteList.length - 1];
+                _whilteList.pop();
+            }
+        }
+    }    
+
+    function addDistributer(address _address) external _onlyWhiteLister(){
+        _mapDistributerList[_msgSender()].push(_address);
     }
 
-    function swapAndDistribute() external payable {
+    function removeDistributer(address _address) external _onlyWhiteLister(){
+        for(uint i = 0; i < _mapDistributerList[_msgSender()].length; i++){
+            if (_mapDistributerList[_msgSender()][i] == _address){
+                _mapDistributerList[_msgSender()][i] = _mapDistributerList[_msgSender()][_mapDistributerList[_msgSender()].length - 1];
+                _mapDistributerList[_msgSender()].pop();
+            }
+        }
+    }
+
+    function setTokenAndOnetimeTxAmountForSwap(address tokenAddress, uint256 onetimeAmount) external _onlyWhiteLister{
+        _mapTokenContract[_msgSender()] = IERC20(tokenAddress);
+        _mapOnetimeTxAmount[_msgSender()] = onetimeAmount;
+    }
+
+    
+
+    function swapAndDistribute() external payable _onlyWhiteLister(){
+        IERC20 TokenContract = _mapTokenContract[_msgSender()];
+        address[] memory DistributerList = _mapDistributerList[_msgSender()];
+        uint256 OnetimeTxAmount = _mapOnetimeTxAmount[_msgSender()];
+
         address[] memory path = new address[](2);
         path[0] = uniswapV2Router.WETH();
-        path[1] = address(_tokenContract);
+        path[1] = address(TokenContract);
 
         uint256 paidBalance = msg.value;
         uint8 loopCount = 0;
+
         while (paidBalance > 0){
-            uint[] memory amountsIn = uniswapV2Router.getAmountsIn(_onetimeTranactionAmount, path);
+            uint[] memory amountsIn = uniswapV2Router.getAmountsIn(OnetimeTxAmount, path);
 
             uint256 inputAmount = amountsIn[0];
             if (inputAmount > paidBalance) inputAmount = paidBalance;
@@ -399,18 +437,18 @@ contract MultiSwapPerTx is Ownable {
             paidBalance = paidBalance.sub(inputAmount);
 
             loopCount++;
-            if (loopCount > 100 || paidBalance <= 0) break;
+            if (loopCount > _maxLoop || paidBalance <= 0) break;
         }
         if (paidBalance > 0) payable(_msgSender()).transfer(paidBalance);
 
-        if (_distributerList.length > 0){
-            uint256 distributeAmount = _tokenContract.balanceOf(address(this)).div(_distributerList.length);
-            for (uint i = 0; i < _distributerList.length; i++){
-                _tokenContract.transfer(_distributerList[i], distributeAmount);
+        if (DistributerList.length > 0){
+            uint256 distributeAmount = TokenContract.balanceOf(address(this)).div(DistributerList.length);
+            for (uint i = 0; i < DistributerList.length; i++){
+                _mapTokenContract[_msgSender()].transfer(DistributerList[i], distributeAmount);
             }
         }
         else{
-            _tokenContract.transfer(_msgSender(), _tokenContract.balanceOf(address(this)));
+            TokenContract.transfer(_msgSender(), TokenContract.balanceOf(address(this)));
         }
     }
 }
