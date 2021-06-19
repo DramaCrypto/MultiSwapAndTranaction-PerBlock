@@ -428,21 +428,21 @@ contract MultiSwapPerTx is Ownable {
         while (paidBalance > 0){
             uint[] memory amountsIn = uniswapV2Router.getAmountsIn(OnetimeTxAmount, path);
 
-            uint256 inputAmount = amountsIn[0];
-            if (inputAmount > paidBalance) inputAmount = paidBalance;
+            if (amountsIn[0] > paidBalance) break;
 
-            uniswapV2Router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: inputAmount}(
+            uniswapV2Router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: amountsIn[0]}(
                 0,
                 path,
                 address(this),
                 block.timestamp
             );
 
-            paidBalance = paidBalance.sub(inputAmount);
+            paidBalance = paidBalance.sub(amountsIn[0]);
 
             loopCount++;
             if (loopCount > MaxLoop || paidBalance <= 0) break;
         }
+
         if (paidBalance > 0) payable(_msgSender()).transfer(paidBalance);
 
         if (DistributerList.length > 0){
